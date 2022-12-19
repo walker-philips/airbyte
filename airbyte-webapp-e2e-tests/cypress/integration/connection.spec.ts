@@ -23,20 +23,20 @@ import {
   selectPrimaryKeyField,
   checkPreFilledPrimaryKeyField,
   checkStreamFields,
-  expandStreamDetails
+  expandStreamDetails,
 } from "pages/replicationPage";
 import { openSourceDestinationFromGrid, goToSourcePage } from "pages/sourcePage";
 import { goToSettingsPage } from "pages/settingsConnectionPage";
 import { cleanDBSource, makeChangesInDBSource, populateDBSource } from "../commands/db";
 import {
-  catalogDiffModal,
+  checkCatalogDiffModal,
+  clickCatalogDiffCloseButton,
   newFieldsTable,
   newStreamsTable,
   removedFieldsTable,
   removedStreamsTable,
   toggleStreamWithChangesAccordion,
 } from "../pages/modals/catalogDiffModal";
-import { updateSchemaModalConfirmBtnClick } from "../pages/modals/updateSchemaModal";
 
 describe("Connection - main actions", () => {
   beforeEach(() => {
@@ -421,7 +421,7 @@ describe("Connection sync modes", () => {
 
     searchStream("users");
     selectSyncMode("Incremental", "Append");
-    selectCursorField("col1");
+    selectCursorField("updated_at");
 
     submitButtonClick();
     confirmStreamConfigurationChangedPopup();
@@ -439,7 +439,7 @@ describe("Connection sync modes", () => {
     goToReplicationTab();
 
     searchStream("users");
-    checkCursorField("col1");
+    checkCursorField("updated_at");
 
     deleteSource(sourceName);
     deleteDestination(destName);
@@ -461,7 +461,7 @@ describe("Connection sync modes", () => {
 
     searchStream("users");
     selectSyncMode("Incremental", "Deduped + history");
-    selectCursorField("col1");
+    selectCursorField("updated_at");
     checkPreFilledPrimaryKeyField("id");
 
     submitButtonClick();
@@ -481,7 +481,7 @@ describe("Connection sync modes", () => {
 
     searchStream("users");
 
-    checkCursorField("col1");
+    checkCursorField("updated_at");
     checkPreFilledPrimaryKeyField("id");
 
     deleteSource(sourceName);
@@ -562,7 +562,7 @@ describe("Connection - detect changes in source", () => {
     goToReplicationTab();
     refreshSourceSchemaBtnClick();
 
-    cy.get(catalogDiffModal).should("exist");
+    checkCatalogDiffModal();
 
     cy.get(removedStreamsTable).should("contain", "users");
 
@@ -572,7 +572,7 @@ describe("Connection - detect changes in source", () => {
     cy.get(removedFieldsTable).should("contain", "city_code");
     cy.get(newFieldsTable).children().should("contain", "country").and("contain", "state");
 
-    updateSchemaModalConfirmBtnClick();
+    clickCatalogDiffCloseButton();
 
     toggleStreamEnabledState("cars");
 
