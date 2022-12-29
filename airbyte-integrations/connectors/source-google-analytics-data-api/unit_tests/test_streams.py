@@ -8,8 +8,13 @@ import random
 from http import HTTPStatus
 from typing import Any, Mapping
 from unittest.mock import MagicMock
-
+from freezegun import freeze_time
+import jwt
 import pytest
+
+from airbyte_cdk.models import SyncMode
+from airbyte_cdk.sources.streams.http import HttpStream
+from source_google_analytics_data_api.authenticator import GoogleServiceKeyAuthenticator
 from source_google_analytics_data_api.source import GoogleAnalyticsDataApiGenericStream
 
 json_credentials = """
@@ -26,6 +31,39 @@ json_credentials = """
     "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/google-analytics-access%40unittest-project-id.iam.gserviceaccount.com"
 }
 """
+
+EXPECTED_RECORDS = [
+    {
+        "property_id": "496180525",
+        "date": "20220731",
+        "deviceCategory": "desktop",
+        "operatingSystem": "Macintosh",
+        "browser": "Chrome",
+        "totalUsers": 344,
+        "newUsers": 169,
+        "sessions": 420,
+        "sessionsPerUser": 1.2209302325581395,
+        "averageSessionDuration": 194.76313766428572,
+        "screenPageViews": 614,
+        "screenPageViewsPerSession": 1.4619047619047618,
+        "bounceRate": 0.47857142857142859,
+    },
+    {
+        "property_id": "496180525",
+        "date": "20220731",
+        "deviceCategory": "desktop",
+        "operatingSystem": "Windows",
+        "browser": "Chrome",
+        "totalUsers": 322,
+        "newUsers": 211,
+        "sessions": 387,
+        "sessionsPerUser": 1.2018633540372672,
+        "averageSessionDuration": 249.21595714211884,
+        "screenPageViews": 669,
+        "screenPageViewsPerSession": 1.7286821705426356,
+        "bounceRate": 0.42377260981912146,
+    },
+]
 
 
 @pytest.fixture
@@ -51,6 +89,7 @@ def patch_base_class(mocker):
                 "bounceRate",
             ],
             "date_ranges_start_date": datetime.datetime.strftime((datetime.datetime.now() - datetime.timedelta(days=1)), "%Y-%m-%d"),
+            "window_in_days": 2
         }
     }
 
@@ -197,38 +236,7 @@ def test_parse_response(patch_base_class):
     }
 
     expected_data = copy.deepcopy(response_data)
-    expected_data["records"] = [
-        {
-            "property_id": "496180525",
-            "date": "20220731",
-            "deviceCategory": "desktop",
-            "operatingSystem": "Macintosh",
-            "browser": "Chrome",
-            "totalUsers": 344,
-            "newUsers": 169,
-            "sessions": 420,
-            "sessionsPerUser": 1.2209302325581395,
-            "averageSessionDuration": 194.76313766428572,
-            "screenPageViews": 614,
-            "screenPageViewsPerSession": 1.4619047619047618,
-            "bounceRate": 0.47857142857142859,
-        },
-        {
-            "property_id": "496180525",
-            "date": "20220731",
-            "deviceCategory": "desktop",
-            "operatingSystem": "Windows",
-            "browser": "Chrome",
-            "totalUsers": 322,
-            "newUsers": 211,
-            "sessions": 387,
-            "sessionsPerUser": 1.2018633540372672,
-            "averageSessionDuration": 249.21595714211884,
-            "screenPageViews": 669,
-            "screenPageViewsPerSession": 1.7286821705426356,
-            "bounceRate": 0.42377260981912146,
-        },
-    ]
+    expected_data["records"] = EXPECTED_RECORDS
 
     response = MagicMock()
     response.json.return_value = response_data
@@ -273,3 +281,78 @@ def test_backoff_time(patch_base_class):
     stream = GoogleAnalyticsDataApiGenericStream(config=patch_base_class["config"])
     expected_backoff_time = None
     assert stream.backoff_time(response_mock) == expected_backoff_time
+
+
+def test_metadata_descriptor_json_schema(patch_base_class, requests_mock):
+    jwt_encode_mock = MagicMock(return_value="encoded_assertion")
+    jwt.encode = jwt_encode_mock
+    stream = GoogleAnalyticsDataApiGenericStream(config=patch_base_class["config"])
+    requests_mock.register_uri("POST",
+                               GoogleServiceKeyAuthenticator._google_oauth2_token_endpoint,
+                               [{"json": {"access_token": "bearer_token", "expires_in": 3600},
+                                 "status_code": 200}])
+    metrics_response = {"dimensions": [
+        {'apiName': 'city', 'uiName': 'City', 'description': 'The city from which the user activity originated.',
+         'category': 'Geography'}],
+        "metrics": [
+            {'apiName': 'eventCount', 'uiName': 'Event count', 'description': 'The count of events.',
+             'type': 'TYPE_INTEGER', 'category': 'Event'}]}
+    requests_mock.register_uri("GET",
+                               "https://analyticsdata.googleapis.com/v1beta/properties/496180525/metadata",
+                               [{"json": metrics_response, "status_code": 200}])
+    assert stream.metadata.get("dimensions") == {'city': {'apiName': 'city', 'uiName': 'City',
+                                                          'description': 'The city from which the user activity originated.',
+                                                          'category': 'Geography'}}
+    assert stream.metadata.get("metrics") == {
+        'eventCount': {'apiName': 'eventCount', 'uiName': 'Event count', 'description': 'The count of events.',
+                       'type': 'TYPE_INTEGER', 'category': 'Event'}}
+    expected_json_schema = {'$schema': 'http://json-schema.org/draft-07/schema#', 'type': ['null', 'object'],
+                            'additionalProperties': True, 'properties': {'property_id': {'type': ['string']},
+                                                                         'uuid': {'type': ['string'],
+                                                                                  'description': 'Custom unique identifier for each record, to support primary key'},
+                                                                         'date': {'type': 'string',
+                                                                                  'description': 'date'},
+                                                                         'deviceCategory': {'type': 'string',
+                                                                                            'description': 'deviceCategory'},
+                                                                         'operatingSystem': {'type': 'string',
+                                                                                             'description': 'operatingSystem'},
+                                                                         'browser': {'type': 'string',
+                                                                                     'description': 'browser'},
+                                                                         'totalUsers': {'type': ['null', 'number'],
+                                                                                        'description': 'totalUsers'},
+                                                                         'newUsers': {'type': ['null', 'number'],
+                                                                                      'description': 'newUsers'},
+                                                                         'sessions': {'type': ['null', 'number'],
+                                                                                      'description': 'sessions'},
+                                                                         'sessionsPerUser': {
+                                                                             'type': ['null', 'number'],
+                                                                             'description': 'sessionsPerUser'},
+                                                                         'averageSessionDuration': {
+                                                                             'type': ['null', 'number'],
+                                                                             'description': 'averageSessionDuration'},
+                                                                         'screenPageViews': {
+                                                                             'type': ['null', 'number'],
+                                                                             'description': 'screenPageViews'},
+                                                                         'screenPageViewsPerSession': {
+                                                                             'type': ['null', 'number'],
+                                                                             'description': 'screenPageViewsPerSession'},
+                                                                         'bounceRate': {'type': ['null', 'number'],
+                                                                                        'description': 'bounceRate'}}}
+    assert stream.get_json_schema() == expected_json_schema
+
+
+def test_incremental_read_records(patch_base_class, mocker):
+    stream = GoogleAnalyticsDataApiGenericStream(config=patch_base_class["config"])
+    expected = [{'records': [x]} for x in EXPECTED_RECORDS]
+    mocker.patch.object(HttpStream, "read_records", return_value=iter(expected))
+    expected_records = list(stream.read_records(sync_mode=SyncMode.full_refresh,
+                                                stream_slice={'startDate': '2022-12-28', 'endDate': '2022-12-30'}))
+    assert expected_records == EXPECTED_RECORDS
+
+
+@freeze_time("2023-01-01")
+def test_incremental_stream_slices(patch_base_class):
+    stream = GoogleAnalyticsDataApiGenericStream(config=patch_base_class["config"])
+    expected_slices = [{'startDate': '2022-12-28', 'endDate': '2022-12-30'},
+                       {'startDate': '2022-12-31', 'endDate': '2023-01-01'}]
+    assert stream.stream_slices(sync_mode=SyncMode.full_refresh) == expected_slices
