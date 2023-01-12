@@ -22,6 +22,7 @@ import io.airbyte.protocol.models.v0.AirbyteMessage.Type;
 import io.airbyte.protocol.models.v0.AirbyteRecordMessage;
 import io.airbyte.protocol.models.v0.AirbyteStreamNameNamespacePair;
 import io.airbyte.protocol.models.v0.ConfiguredAirbyteCatalog;
+import java.nio.Buffer;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -138,7 +139,7 @@ public class BufferedStreamConsumer extends FailureTrackingAirbyteMessageConsume
         return;
       }
 
-      final Optional flushType = bufferingStrategy.addRecord(stream, message);
+      final Optional<BufferFlushType> flushType = bufferingStrategy.addRecord(stream, message);
       // if present means that a flush occurred
       if (flushType.isPresent()) {
         if (flushType.equals(BufferFlushType.FLUSH_ALL)) {

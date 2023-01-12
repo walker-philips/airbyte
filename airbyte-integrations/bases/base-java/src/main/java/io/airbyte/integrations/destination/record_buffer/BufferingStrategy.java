@@ -24,13 +24,13 @@ public interface BufferingStrategy extends AutoCloseable {
    * Add a new message to the buffer while consuming streams, also handles when a buffer flush when
    * buffer has been filled
    *
-   * @param stream stream associated with record
+   * @param stream  stream associated with record
    * @param message {@link AirbyteMessage} to be added to the buffer
    * @return an optional value if a flushed occur with the respective flush type, otherwise an empty
-   *         value means only a record was added
+   * value means only a record was added
    * @throws Exception throw on failure
    */
-  Optional addRecord(AirbyteStreamNameNamespacePair stream, AirbyteMessage message) throws Exception;
+  Optional<BufferFlushType> addRecord(AirbyteStreamNameNamespacePair stream, AirbyteMessage message) throws Exception;
 
   /**
    * Flush buffered messages in a writer from a particular stream

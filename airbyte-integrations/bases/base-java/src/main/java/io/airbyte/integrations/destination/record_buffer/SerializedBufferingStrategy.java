@@ -59,14 +59,14 @@ public class SerializedBufferingStrategy implements BufferingStrategy {
   /**
    * Handles both adding records and when buffer is full to also flush
    *
-   * @param stream - stream associated with record
+   * @param stream  - stream associated with record
    * @param message - {@link AirbyteMessage} to buffer
    * @return true if this {@link io.airbyte.protocol.models.AirbyteRecordMessage} causes buffer to
-   *         flush all messages, otherwise false
+   * flush all messages, otherwise false
    * @throws Exception
    */
   @Override
-  public Optional addRecord(final AirbyteStreamNameNamespacePair stream, final AirbyteMessage message) throws Exception {
+  public Optional<BufferFlushType> addRecord(final AirbyteStreamNameNamespacePair stream, final AirbyteMessage message) throws Exception {
     Optional<BufferFlushType> flushed = Optional.empty();
 
     /*
